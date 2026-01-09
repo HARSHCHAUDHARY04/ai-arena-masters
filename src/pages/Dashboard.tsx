@@ -9,8 +9,9 @@ import { EventTimer } from '@/components/EventTimer';
 import { ApiSubmissionForm } from '@/components/ApiSubmissionForm';
 import { TeamManagement } from '@/components/TeamManagement';
 import { ShortlistStatusCard } from '@/components/ShortlistStatusCard';
+import EventDetails from '@/components/EventDetails';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { 
   FileText, 
   Code2, 
@@ -39,7 +40,8 @@ interface Event {
 }
 
 interface Team {
-  id: string;
+  id?: string;
+  _id?: string;
   name: string;
   shortlist_status: string;
   dataset_name: string | null;
@@ -61,7 +63,10 @@ export default function Dashboard() {
   const [activeEvent, setActiveEvent] = useState<Event | null>(null);
   const [userTeam, setUserTeam] = useState<Team | null>(null);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [currentRound, setCurrentRound] = useState<any | null>(null);
+  const [qualificationStatus, setQualificationStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'team' | 'submit' | 'scoreboard'>('overview');
 
   useEffect(() => {
@@ -78,64 +83,69 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     try {
+      console.log('Fetching dashboard data for user:', user?.id);
+      setLoading(true);
+      
       // Fetch active event
-      const { data: events } = await supabase
-        .from('events')
-        .select('*')
-        .in('status', ['registration', 'active'])
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (events && events.length > 0) {
-        setActiveEvent(events[0]);
+      try {
+        const eventRes = await fetch(`http://localhost:4000/api/events?status=active`);
+        if (eventRes.ok) {
+          const events = await eventRes.json();
+          console.log('Events:', events);
+          if (events && events.length > 0) {
+            setActiveEvent(events[0]);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching events:', err);
       }
 
       // Fetch user's team with full details
       if (user) {
-        const { data: teamMembership } = await supabase
-          .from('team_members')
-          .select('team_id')
-          .eq('user_id', user.id)
-          .single();
-
-        if (teamMembership) {
-          const { data: team } = await supabase
-            .from('teams')
-            .select('id, name, shortlist_status, dataset_name, dataset_description')
-            .eq('id', teamMembership.team_id)
-            .single();
-
-          if (team) {
-            setUserTeam(team);
+        try {
+          const teamMemberRes = await fetch(`http://localhost:4000/api/team_members?user_id=${user.id}`);
+          if (teamMemberRes.ok) {
+            const teamMembersResp = await teamMemberRes.json();
+            console.log('Team members:', teamMembersResp);
             
-            // Fetch team members
-            const { data: members } = await supabase
-              .from('team_members')
-              .select('id, user_id')
-              .eq('team_id', team.id);
+            if (teamMembersResp && teamMembersResp.length > 0) {
+              const teamMembership = teamMembersResp[0];
+              
+              const teamRes = await fetch(`http://localhost:4000/api/teams/${teamMembership.team_id}`);
+              if (teamRes.ok) {
+                const team = await teamRes.json();
+                console.log('Team:', team);
 
-            if (members) {
-              const memberData: TeamMember[] = await Promise.all(
-                members.map(async (member) => {
-                  const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('email, team_name')
-                    .eq('id', member.user_id)
-                    .single();
-                  
-                  return {
-                    ...member,
-                    profiles: profile || null,
-                  };
-                })
-              );
-              setTeamMembers(memberData);
+                // Normalise Mongo `_id` to `id` so downstream code is safe
+                const normalisedTeam: Team = {
+                  id: team.id || team._id || team._id?.toString?.(),
+                  _id: team._id,
+                  name: team.name,
+                  shortlist_status: team.shortlist_status,
+                  dataset_name: team.dataset_name ?? null,
+                  dataset_description: team.dataset_description ?? null,
+                };
+
+                setUserTeam(normalisedTeam);
+                
+                // Fetch all team members for this team
+                const allMembersRes = await fetch(
+                  `http://localhost:4000/api/team_members?team_id=${normalisedTeam.id || normalisedTeam._id}`
+                );
+                if (allMembersRes.ok) {
+                  const members = await allMembersRes.json();
+                  setTeamMembers(members);
+                }
+              }
             }
           }
+        } catch (err) {
+          console.error('Error fetching team data:', err);
         }
       }
     } catch (error) {
       console.error('Error fetching data:', error);
+      setError(error instanceof Error ? error.message : 'Failed to load dashboard');
     } finally {
       setLoading(false);
     }
@@ -143,8 +153,24 @@ export default function Dashboard() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+          <h2 className="font-display text-xl font-bold mb-2">Error Loading Dashboard</h2>
+          <p className="text-muted-foreground mb-4">{error}</p>
+          <Button onClick={() => window.location.reload()}>Reload Page</Button>
+        </div>
       </div>
     );
   }
@@ -324,7 +350,9 @@ export default function Dashboard() {
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Team ID</p>
-                        <p className="font-mono text-xs">{userTeam.id.slice(0, 8)}...</p>
+                        <p className="font-mono text-xs">
+                          {(userTeam.id || userTeam._id || '').toString().slice(0, 8) || 'N/A'}...
+                        </p>
                       </div>
                     </div>
                     {userTeam.dataset_name && (
@@ -356,67 +384,13 @@ export default function Dashboard() {
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="glass-card p-6"
+                    className=""
                   >
-                    <h2 className="font-display font-bold text-xl mb-4">
-                      {activeEvent.title}
-                    </h2>
-                    
-                    {activeEvent.status === 'registration' && (
-                      <div className="mb-6 p-4 rounded-xl bg-accent/10 border border-accent/30">
-                        <div className="flex items-center gap-3">
-                          <Rocket className="h-8 w-8 text-accent" />
-                          <div>
-                            <p className="font-display font-bold text-lg text-accent">Event Coming Soon</p>
-                            <p className="text-sm text-muted-foreground">The competition will begin shortly. Stay tuned!</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <p className="text-muted-foreground mb-6">
-                      {activeEvent.description || 'No description available'}
-                    </p>
-
-                    {activeEvent.problem_statement && (
-                      <div className="mb-6">
-                        <h3 className="font-display font-semibold mb-2 flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-primary" />
-                          Problem Statement
-                        </h3>
-                        <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-                          <p className="text-sm whitespace-pre-wrap">
-                            {activeEvent.problem_statement}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {activeEvent.api_contract && (
-                      <div className="mb-6">
-                        <h3 className="font-display font-semibold mb-2 flex items-center gap-2">
-                          <Code2 className="h-4 w-4 text-secondary" />
-                          API Contract
-                        </h3>
-                        <div className="p-4 rounded-lg bg-muted/30 border border-border/50 font-mono text-sm overflow-x-auto">
-                          <pre className="whitespace-pre-wrap">{activeEvent.api_contract}</pre>
-                        </div>
-                      </div>
-                    )}
-
-                    {activeEvent.rules && (
-                      <div>
-                        <h3 className="font-display font-semibold mb-2 flex items-center gap-2">
-                          <BookOpen className="h-4 w-4 text-accent" />
-                          Rules & Regulations
-                        </h3>
-                        <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-                          <p className="text-sm whitespace-pre-wrap">
-                            {activeEvent.rules}
-                          </p>
-                        </div>
-                      </div>
-                    )}
+                    <EventDetails
+                      event={activeEvent}
+                      currentRound={currentRound}
+                      qualificationStatus={qualificationStatus}
+                    />
                   </motion.div>
                 ) : (
                   <div className="glass-card p-12 text-center">

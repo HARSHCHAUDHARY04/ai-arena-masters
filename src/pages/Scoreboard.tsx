@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Navbar } from '@/components/Navbar';
 import { ParticleBackground } from '@/components/ParticleBackground';
 import { EventTimer } from '@/components/EventTimer';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { 
   Trophy, 
   Medal, 
@@ -41,31 +41,20 @@ export default function Scoreboard() {
   useEffect(() => {
     fetchData();
 
-    // Set up realtime subscription
-    const channel = supabase
-      .channel('scoreboard-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'scores',
-        },
-        () => {
-          fetchScores();
-        }
-      )
-      .subscribe();
+    // Poll for updates every 5 seconds instead of realtime subscription
+    const interval = setInterval(() => {
+      fetchScores();
+    }, 5000);
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, []);
 
   const fetchData = async () => {
     try {
       // Fetch active event
-      const { data: events } = await supabase
+      const { data: events } = await db
         .from('events')
         .select('id, title, status, start_time, end_time')
         .in('status', ['active', 'paused', 'registration'])
@@ -86,7 +75,7 @@ export default function Scoreboard() {
 
   const fetchScores = async () => {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('scores')
         .select(`
           id,

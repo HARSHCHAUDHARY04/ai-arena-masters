@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/lib/auth';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { Navbar } from '@/components/Navbar';
 import { ParticleBackground } from '@/components/ParticleBackground';
 import { LiveScoreboard } from '@/components/LiveScoreboard';
@@ -55,7 +55,7 @@ export default function OrganizerDashboard() {
   const fetchData = async () => {
     try {
       // Fetch events
-      const { data: eventsData } = await supabase
+      const { data: eventsData } = await db
         .from('events')
         .select('id, title, status, start_time, end_time')
         .order('created_at', { ascending: false });
@@ -65,7 +65,7 @@ export default function OrganizerDashboard() {
       }
 
       // Fetch team stats
-      const { data: teamsData } = await supabase
+      const { data: teamsData } = await db
         .from('teams')
         .select('shortlist_status');
 

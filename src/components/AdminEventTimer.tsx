@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -58,7 +58,7 @@ export function AdminEventTimer({ event, onUpdate }: AdminEventTimerProps) {
   const updateTimer = async () => {
     setUpdating(true);
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('events')
         .update({
           start_time: startTime ? new Date(startTime).toISOString() : null,
@@ -87,7 +87,7 @@ export function AdminEventTimer({ event, onUpdate }: AdminEventTimerProps) {
         updates.start_time = new Date().toISOString();
       }
 
-      const { error } = await supabase
+      const { error } = await db
         .from('events')
         .update(updates)
         .eq('id', event.id);
@@ -106,7 +106,7 @@ export function AdminEventTimer({ event, onUpdate }: AdminEventTimerProps) {
   const resetTimer = async () => {
     setUpdating(true);
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('events')
         .update({
           status: 'registration',

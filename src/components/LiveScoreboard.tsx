@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { 
   Trophy, 
   Medal, 
@@ -33,31 +33,14 @@ export function LiveScoreboard({ eventId, limit = 10 }: LiveScoreboardProps) {
 
   useEffect(() => {
     fetchScores();
-
-    // Set up realtime subscription
-    const channel = supabase
-      .channel('scores-channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'scores',
-        },
-        () => {
-          fetchScores();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    // Simple polling to mimic "live" updates without realtime channels
+    const intervalId = setInterval(fetchScores, 10000);
+    return () => clearInterval(intervalId);
   }, [eventId]);
 
   const fetchScores = async () => {
     try {
-      let query = supabase
+      let query = db
         .from('scores')
         .select(`
           id,

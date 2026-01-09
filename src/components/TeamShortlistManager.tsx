@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { Button } from '@/components/ui/button';
 import { 
   Users, 
@@ -39,7 +39,7 @@ export function TeamShortlistManager({ eventId }: TeamShortlistManagerProps) {
 
   const fetchTeams = async () => {
     try {
-      let query = supabase
+      let query = db
         .from('teams')
         .select('*')
         .order('created_at', { ascending: false });
@@ -61,7 +61,7 @@ export function TeamShortlistManager({ eventId }: TeamShortlistManagerProps) {
   const updateShortlistStatus = async (teamId: string, status: string) => {
     setUpdating(teamId);
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('teams')
         .update({ shortlist_status: status })
         .eq('id', teamId);

@@ -71,24 +71,25 @@ export function HeroSection() {
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16"
+            transition={{ duration: 0.6, delay: 0.25 }}
+            className="flex items-center justify-center gap-4 mb-8"
           >
             {user ? (
-              <Link to="/dashboard">
-                <Button variant="hero" size="xl" className="group">
-                  <Zap className="h-5 w-5" />
-                  Enter Arena
-                  <ChevronRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                </Button>
-              </Link>
-            ) : (
               <>
-                <Link to="/auth?mode=signup">
+                <Link to="/dashboard">
                   <Button variant="hero" size="xl" className="group">
                     <Zap className="h-5 w-5" />
-                    Join The Battle
+                    Enter Arena
                     <ChevronRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link to="/auth">
+                  <Button variant="hero" size="xl">
+                    <Zap className="h-5 w-5" />
+                    Sign In
                   </Button>
                 </Link>
                 <Link to="/scoreboard">

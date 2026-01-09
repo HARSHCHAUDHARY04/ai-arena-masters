@@ -58,12 +58,26 @@ export default function AuthPage() {
     if (!validateForm()) return;
     
     setLoading(true);
-    const { error } = await signIn(email, password);
+    const { error, role: loggedInRole } = await signIn(email, password);
     
     if (error) {
       toast.error('Login failed. Please check your credentials.');
     } else {
       toast.success('Welcome back!');
+
+      // Prefer the role returned from signIn, then context/localStorage as fallback
+      const effectiveRole =
+        loggedInRole ||
+        role ||
+        ((localStorage.getItem('ai_arena_role') || 'participant') as any);
+
+      if (effectiveRole === 'admin') {
+        navigate('/admin');
+      } else if (effectiveRole === 'organizer') {
+        navigate('/organizer');
+      } else {
+        navigate('/dashboard');
+      }
     }
     setLoading(false);
   };

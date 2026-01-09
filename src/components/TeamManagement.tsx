@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,14 +64,14 @@ export function TeamManagement({ eventId, onTeamChange }: TeamManagementProps) {
     if (!user) return;
 
     try {
-      const { data: membership } = await supabase
+      const { data: membership } = await db
         .from('team_members')
         .select('team_id')
         .eq('user_id', user.id)
         .single();
 
       if (membership) {
-        const { data: team } = await supabase
+        const { data: team } = await db
           .from('teams')
           .select('*')
           .eq('id', membership.team_id)
@@ -90,7 +90,7 @@ export function TeamManagement({ eventId, onTeamChange }: TeamManagementProps) {
   };
 
   const fetchTeamMembers = async (teamId: string) => {
-    const { data: members } = await supabase
+    const { data: members } = await db
       .from('team_members')
       .select('id, user_id, joined_at')
       .eq('team_id', teamId);
@@ -99,7 +99,7 @@ export function TeamManagement({ eventId, onTeamChange }: TeamManagementProps) {
       // Fetch profiles separately
       const memberData: TeamMember[] = await Promise.all(
         members.map(async (member) => {
-          const { data: profile } = await supabase
+          const { data: profile } = await db
             .from('profiles')
             .select('email, team_name')
             .eq('id', member.user_id)
@@ -116,7 +116,7 @@ export function TeamManagement({ eventId, onTeamChange }: TeamManagementProps) {
   };
 
   const fetchAvailableTeams = async () => {
-    const query = supabase
+    const query = db
       .from('teams')
       .select('*')
       .order('created_at', { ascending: false });
@@ -137,7 +137,7 @@ export function TeamManagement({ eventId, onTeamChange }: TeamManagementProps) {
     setCreating(true);
     try {
       // Create the team
-      const { data: team, error: teamError } = await supabase
+      const { data: team, error: teamError } = await db
         .from('teams')
         .insert({
           name: newTeamName.trim(),
@@ -150,7 +150,7 @@ export function TeamManagement({ eventId, onTeamChange }: TeamManagementProps) {
       if (teamError) throw teamError;
 
       // Add creator as team member
-      const { error: memberError } = await supabase
+      const { error: memberError } = await db
         .from('team_members')
         .insert({
           team_id: team.id,
@@ -177,7 +177,7 @@ export function TeamManagement({ eventId, onTeamChange }: TeamManagementProps) {
 
     setJoining(teamId);
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('team_members')
         .insert({
           team_id: teamId,
@@ -201,7 +201,7 @@ export function TeamManagement({ eventId, onTeamChange }: TeamManagementProps) {
     if (!user || !userTeam) return;
 
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('team_members')
         .delete()
         .eq('team_id', userTeam.id)

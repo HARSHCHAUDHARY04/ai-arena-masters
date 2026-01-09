@@ -4,8 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import type { Json } from '@/integrations/supabase/types';
+import db from '@/integrations/mongo/client';
 import { 
   Send, 
   CheckCircle, 
@@ -158,7 +157,7 @@ export function ApiSubmissionForm({
 
     try {
       // Check if submission already exists
-      const { data: existing } = await supabase
+      const { data: existing } = await db
         .from('api_submissions')
         .select('id')
         .eq('team_id', teamId)
@@ -175,7 +174,7 @@ export function ApiSubmissionForm({
 
       if (existing) {
         // Update existing submission
-        const { error } = await supabase
+        const { error } = await db
           .from('api_submissions')
           .update({
             endpoint_url: endpoint,
@@ -188,7 +187,7 @@ export function ApiSubmissionForm({
         if (error) throw error;
       } else {
         // Create new submission
-        const { error } = await supabase
+        const { error } = await db
           .from('api_submissions')
           .insert([{
             team_id: teamId,
@@ -234,15 +233,19 @@ export function ApiSubmissionForm({
     setEvaluationScores(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke('evaluate-api', {
-        body: {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const res = await fetch(`${apiUrl}/api/evaluate-api`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           team_id: teamId,
           event_id: eventId,
           endpoint_url: endpoint,
-        },
+        }),
       });
 
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Evaluation failed');
 
       if (data?.success && data?.scores) {
         setEvaluationScores(data.scores);

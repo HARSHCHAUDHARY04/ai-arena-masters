@@ -85,9 +85,7 @@ export function Navbar() {
                 <Link to="/auth">
                   <Button variant="ghost" size="sm">Sign In</Button>
                 </Link>
-                <Link to="/auth?mode=signup">
-                  <Button variant="neon" size="sm">Register</Button>
-                </Link>
+                {/* registration disabled: signup removed */}
               </div>
             )}
           </div>
@@ -138,9 +136,6 @@ export function Navbar() {
                 <div className="flex flex-col gap-2">
                   <Link to="/auth" onClick={() => setMobileMenuOpen(false)}>
                     <Button variant="ghost" size="sm" className="w-full justify-start">Sign In</Button>
-                  </Link>
-                  <Link to="/auth?mode=signup" onClick={() => setMobileMenuOpen(false)}>
-                    <Button variant="neon" size="sm" className="w-full">Register</Button>
                   </Link>
                 </div>
               )}

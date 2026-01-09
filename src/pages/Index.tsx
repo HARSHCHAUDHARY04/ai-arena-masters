@@ -4,7 +4,7 @@ import { ParticleBackground } from '@/components/ParticleBackground';
 import { EventCard } from '@/components/EventCard';
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { 
   Code2, 
   Cpu, 
@@ -33,7 +33,7 @@ const Index = () => {
 
   const fetchEvents = async () => {
     try {
-      const { data } = await supabase
+      const { data } = await db
         .from('events')
         .select('id, title, description, status, start_time, end_time')
         .in('status', ['registration', 'active'])

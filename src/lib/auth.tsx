@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+
+type User = { id: string; email: string; role?: UserRole };
+type Session = { user: User; access_token: string };
+import db from '@/integrations/mongo/client';
 
 type UserRole = 'admin' | 'organizer' | 'participant';
 
@@ -9,7 +11,10 @@ interface AuthContextType {
   session: Session | null;
   role: UserRole | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signIn: (
+    email: string,
+    password: string
+  ) => Promise<{ error: Error | null; user?: User | null; role?: UserRole | null }>;
   // signUp removed - admin creates users only
   signOut: () => Promise<void>;
 }
@@ -22,39 +27,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserRole = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .single();
-
-      if (error) {
-        console.error('Error fetching role:', error);
-        return null;
-      }
-      return data?.role as UserRole;
-    } catch (err) {
-      console.error('Error in fetchUserRole:', err);
-      return null;
-    }
-  };
-
   useEffect(() => {
     // Set up auth state listener first
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = db.auth.onAuthStateChange(
       (event, session) => {
+        console.log('Auth state changed:', event, session);
         setSession(session);
         setUser(session?.user ?? null);
 
-        // Defer role fetching with setTimeout to avoid deadlock
+        // Check role from user object or localStorage
         if (session?.user) {
-          setTimeout(async () => {
-            const userRole = await fetchUserRole(session.user.id);
-            setRole(userRole);
-            setLoading(false);
-          }, 0);
+          let userRole = session.user.role as UserRole | undefined;
+          if (!userRole) {
+            userRole = (localStorage.getItem('ai_arena_role') || 'participant') as UserRole;
+          }
+          setRole(userRole);
+          setLoading(false);
         } else {
           setRole(null);
           setLoading(false);
@@ -63,16 +51,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     // Then check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    db.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session:', session);
       setSession(session);
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        fetchUserRole(session.user.id).then(userRole => {
-          setRole(userRole);
-          setLoading(false);
-        });
+        let userRole = session.user.role as UserRole | undefined;
+        if (!userRole) {
+          userRole = (localStorage.getItem('ai_arena_role') || 'participant') as UserRole;
+        }
+        setRole(userRole);
+        setLoading(false);
       } else {
+        setRole(null);
         setLoading(false);
       }
     });
@@ -81,17 +73,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const result = await db.auth.signInWithPassword({
       email,
       password,
     });
-    return { error: error as Error | null };
+    
+    const error = (result as any).error ?? null;
+    const data = (result as any).data;
+    
+    // If login successful, immediately update state from returned data
+    if (!error && data?.user) {
+      const loggedInUser = data.user as User;
+      const loggedInRole =
+        (loggedInUser.role as UserRole | undefined) ||
+        ((localStorage.getItem('ai_arena_role') || 'participant') as UserRole);
+
+      setUser(loggedInUser);
+      setRole(loggedInRole);
+      setSession({ user: loggedInUser, access_token: data.token });
+      setLoading(false);
+    }
+    
+    // Normalise error into an Error instance for callers
+    const normalisedError =
+      error instanceof Error
+        ? error
+        : error && typeof error === 'object'
+        ? new Error((error as any).error || 'Login failed')
+        : null;
+
+    return {
+      error: normalisedError,
+      user: data?.user ?? null,
+      role: (data?.user?.role as UserRole | undefined) ?? null,
+    };
   };
 
   // signUp removed - admin creates users via edge function
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await db.auth.signOut();
+    localStorage.removeItem('ai_arena_role');
     setUser(null);
     setSession(null);
     setRole(null);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { 
   Users, 
   Calendar, 
@@ -37,34 +37,34 @@ export function AdminAnalytics() {
   const fetchAnalytics = async () => {
     try {
       // Fetch total participants (team members)
-      const { count: participantCount } = await supabase
+      const { count: participantCount } = await db
         .from('team_members')
         .select('*', { count: 'exact', head: true });
 
       // Fetch total events
-      const { count: eventCount } = await supabase
+      const { count: eventCount } = await db
         .from('events')
         .select('*', { count: 'exact', head: true });
 
       // Fetch active events
-      const { count: activeEventCount } = await supabase
+      const { count: activeEventCount } = await db
         .from('events')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'active');
 
       // Fetch total teams
-      const { count: teamCount } = await supabase
+      const { count: teamCount } = await db
         .from('teams')
         .select('*', { count: 'exact', head: true });
 
       // Fetch shortlisted teams
-      const { count: shortlistedCount } = await supabase
+      const { count: shortlistedCount } = await db
         .from('teams')
         .select('*', { count: 'exact', head: true })
         .eq('shortlist_status', 'shortlisted');
 
       // Fetch pending teams
-      const { count: pendingCount } = await supabase
+      const { count: pendingCount } = await db
         .from('teams')
         .select('*', { count: 'exact', head: true })
         .eq('shortlist_status', 'pending');

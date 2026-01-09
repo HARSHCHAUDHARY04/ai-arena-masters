@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import db from '@/integrations/mongo/client';
 import { 
   Plus,
   Calendar,
@@ -50,10 +50,15 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'events' | 'teams' | 'timer'>('overview');
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [rounds, setRounds] = useState<any[]>([]);
+  const [loadingRounds, setLoadingRounds] = useState(false);
+  const [creatingRound, setCreatingRound] = useState(false);
+  const [newRound, setNewRound] = useState({ number: 1, title: '', dataset_name: '', dataset_description: '', problem_statement: '', evaluation_criteria: '' });
   
   // Form state
   const [newEvent, setNewEvent] = useState({
@@ -82,17 +87,34 @@ export default function AdminDashboard() {
     }
   }, [user, role]);
 
+  useEffect(() => {
+    if (selectedEvent) fetchRounds(selectedEvent.id);
+  }, [selectedEvent]);
+
+  const fetchRounds = async (eventId: string) => {
+    setLoadingRounds(true);
+    try {
+      const res = await fetch(`http://localhost:4000/api/rounds?event_id=${eventId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRounds(data || []);
+      }
+    } catch (err) {
+      console.error('Error fetching rounds', err);
+    } finally {
+      setLoadingRounds(false);
+    }
+  };
+
   const fetchEvents = async () => {
     try {
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setEvents(data || []);
-      if (data && data.length > 0 && !selectedEvent) {
-        setSelectedEvent(data[0]);
+      const res = await fetch('http://localhost:4000/api/events');
+      if (res.ok) {
+        const data = await res.json();
+        setEvents(data || []);
+        if (data && data.length > 0 && !selectedEvent) {
+          setSelectedEvent(data[0]);
+        }
       }
     } catch (error) {
       console.error('Error fetching events:', error);
@@ -106,7 +128,7 @@ export default function AdminDashboard() {
     setCreating(true);
 
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('events')
         .insert([{
           title: newEvent.title,
@@ -157,7 +179,7 @@ export default function AdminDashboard() {
         updates.submissions_locked = true;
       }
 
-      const { error } = await supabase
+      const { error } = await db
         .from('events')
         .update(updates)
         .eq('id', eventId);
@@ -179,9 +201,89 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleCreateRound = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEvent) return;
+    setCreatingRound(true);
+    try {
+      const payload = {
+        event_id: selectedEvent.id,
+        number: Number(newRound.number),
+        title: newRound.title || `Round ${newRound.number}`,
+        dataset_name: newRound.dataset_name || null,
+        dataset_description: newRound.dataset_description || null,
+        problem_statement: newRound.problem_statement || null,
+        evaluation_criteria: newRound.evaluation_criteria || null,
+        status: 'upcoming',
+        submissions_locked: false,
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await db.from('rounds').insert([payload]);
+      if (error) throw error;
+      setNewRound({ number: newRound.number + 1, title: '', dataset_name: '', dataset_description: '', problem_statement: '', evaluation_criteria: '' });
+      fetchRounds(selectedEvent.id);
+      toast({ title: 'Round Created', description: `Round ${payload.number} created.` });
+    } catch (err) {
+      console.error('Error creating round', err);
+      toast({ title: 'Error', description: 'Failed to create round', variant: 'destructive' });
+    } finally {
+      setCreatingRound(false);
+    }
+  };
+
+  const updateRoundStatus = async (roundId: string, status: string) => {
+    try {
+      const { error } = await db.from('rounds').update({ status }).eq('id', roundId);
+      if (error) throw error;
+      toast({ title: 'Round Updated', description: `Round status set to ${status}` });
+      if (selectedEvent) fetchRounds(selectedEvent.id);
+    } catch (err) {
+      console.error('Error updating round status', err);
+      toast({ title: 'Error', description: 'Failed to update round', variant: 'destructive' });
+    }
+  };
+
+  const toggleRoundLock = async (roundId: string, locked: boolean) => {
+    try {
+      const { error } = await db.from('rounds').update({ submissions_locked: locked }).eq('id', roundId);
+      if (error) throw error;
+      toast({ title: locked ? 'Locked' : 'Unlocked', description: 'Round submissions updated' });
+      if (selectedEvent) fetchRounds(selectedEvent.id);
+    } catch (err) {
+      console.error('Error toggling round lock', err);
+    }
+  };
+
+  const triggerEvaluation = async (roundId: string) => {
+    // Placeholder: mark round as completed and optionally create evaluation job
+    try {
+      const { error } = await db.from('rounds').update({ status: 'completed' }).eq('id', roundId);
+      if (error) throw error;
+      toast({ title: 'Evaluation Triggered', description: 'Round marked complete. Evaluation should run.' });
+      if (selectedEvent) fetchRounds(selectedEvent.id);
+    } catch (err) {
+      console.error('Error triggering evaluation', err);
+      toast({ title: 'Error', description: 'Failed to trigger evaluation', variant: 'destructive' });
+    }
+  };
+
+  const eliminateTeamsForRound = async (roundId: string, teamIds: string[]) => {
+    try {
+      // mark qualifications for teams as eliminated for this round
+      for (const teamId of teamIds) {
+        const { error } = await db.from('qualifications').upsert([{ round_id: roundId, team_id: teamId, status: 'eliminated' }]);
+        if (error) console.error('eliminate error', error);
+      }
+      toast({ title: 'Elimination Updated', description: 'Marked teams as eliminated for the round.' });
+    } catch (err) {
+      console.error('Error eliminating teams', err);
+    }
+  };
+
   const toggleSubmissions = async (eventId: string, locked: boolean) => {
     try {
-      const { error } = await supabase
+      const { error } = await db
         .from('events')
         .update({ submissions_locked: locked })
         .eq('id', eventId);
@@ -202,8 +304,24 @@ export default function AdminDashboard() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading admin dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+          <h2 className="font-display text-xl font-bold mb-2">Error Loading Dashboard</h2>
+          <p className="text-muted-foreground mb-4">{error}</p>
+          <Button onClick={() => window.location.reload()}>Reload Page</Button>
+        </div>
       </div>
     );
   }
@@ -511,9 +629,60 @@ export default function AdminDashboard() {
               )}
             </div>
 
-            {/* Sidebar */}
+            {/* Sidebar: Rounds Management */}
             <div className="space-y-6">
-              <LiveScoreboard limit={5} />
+              {selectedEvent ? (
+                <div className="glass-card p-4">
+                  <h3 className="font-display font-bold text-lg mb-3">Rounds for {selectedEvent.title}</h3>
+
+                  <div className="space-y-3 mb-3">
+                    {loadingRounds ? (
+                      <div className="text-sm text-muted-foreground">Loading rounds...</div>
+                    ) : rounds.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No rounds yet. Create one below.</div>
+                    ) : (
+                      rounds.map((r) => (
+                        <div key={r.id} className="p-3 rounded-lg border border-border/50 bg-muted/10">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold">Round {r.number}: {r.title}</p>
+                              <p className="text-xs text-muted-foreground">Status: <span className="capitalize">{r.status || 'upcoming'}</span></p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button size="icon" onClick={() => updateRoundStatus(r.id, 'live')} title="Make Live">
+                                <Play className="h-4 w-4" />
+                              </Button>
+                              <Button size="icon" onClick={() => updateRoundStatus(r.id, 'completed')} title="Complete">
+                                <Square className="h-4 w-4" />
+                              </Button>
+                              <Button size="icon" onClick={() => toggleRoundLock(r.id, !r.submissions_locked)} title={r.submissions_locked ? 'Unlock' : 'Lock'}>
+                                {r.submissions_locked ? <Unlock className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <form onSubmit={handleCreateRound} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input type="number" value={newRound.number} min={1} onChange={(e) => setNewRound({ ...newRound, number: Number(e.target.value) })} />
+                      <Input placeholder="Round Title" value={newRound.title} onChange={(e) => setNewRound({ ...newRound, title: e.target.value })} />
+                    </div>
+                    <Input placeholder="Dataset name" value={newRound.dataset_name} onChange={(e) => setNewRound({ ...newRound, dataset_name: e.target.value })} />
+                    <Input placeholder="Dataset short description" value={newRound.dataset_description} onChange={(e) => setNewRound({ ...newRound, dataset_description: e.target.value })} />
+                    <Textarea placeholder="Problem statement (optional)" value={newRound.problem_statement} onChange={(e) => setNewRound({ ...newRound, problem_statement: e.target.value })} rows={2} />
+                    <Textarea placeholder="Evaluation criteria (optional)" value={newRound.evaluation_criteria} onChange={(e) => setNewRound({ ...newRound, evaluation_criteria: e.target.value })} rows={2} />
+                    <div className="flex gap-2">
+                      <Button type="submit" disabled={creatingRound}>{creatingRound ? 'Creating...' : 'Create Round'}</Button>
+                      <Button type="button" variant="ghost" onClick={() => setNewRound({ number: newRound.number + 1, title: '', dataset_name: '', dataset_description: '', problem_statement: '', evaluation_criteria: '' })}>Reset</Button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <LiveScoreboard limit={5} />
+              )}
             </div>
           </div>
         )}
