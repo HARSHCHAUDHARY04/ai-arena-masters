@@ -82,6 +82,8 @@ export default function Dashboard() {
   }, [user]);
 
   const fetchData = async () => {
+    console.log("AUTH USER OBJECT:", user);
+
     try {
       console.log('Fetching dashboard data for user:', user?.id);
       setLoading(true);
@@ -101,48 +103,45 @@ export default function Dashboard() {
       }
 
       // Fetch user's team with full details
-      if (user) {
-        try {
-          const teamMemberRes = await fetch(`http://localhost:4000/api/team_members?user_id=${user.id}`);
-          if (teamMemberRes.ok) {
-            const teamMembersResp = await teamMemberRes.json();
-            console.log('Team members:', teamMembersResp);
-            
-            if (teamMembersResp && teamMembersResp.length > 0) {
-              const teamMembership = teamMembersResp[0];
-              
-              const teamRes = await fetch(`http://localhost:4000/api/teams/${teamMembership.team_id}`);
-              if (teamRes.ok) {
-                const team = await teamRes.json();
-                console.log('Team:', team);
+      // Fetch team directly (participant = team login)
+if (user) {
+  try {
+    const teamRes = await fetch(
+      `http://localhost:4000/api/teams/${user.id}`
+    );
 
-                // Normalise Mongo `_id` to `id` so downstream code is safe
-                const normalisedTeam: Team = {
-                  id: team.id || team._id || team._id?.toString?.(),
-                  _id: team._id,
-                  name: team.name,
-                  shortlist_status: team.shortlist_status,
-                  dataset_name: team.dataset_name ?? null,
-                  dataset_description: team.dataset_description ?? null,
-                };
+    if (teamRes.ok) {
+      const team = await teamRes.json();
 
-                setUserTeam(normalisedTeam);
-                
-                // Fetch all team members for this team
-                const allMembersRes = await fetch(
-                  `http://localhost:4000/api/team_members?team_id=${normalisedTeam.id || normalisedTeam._id}`
-                );
-                if (allMembersRes.ok) {
-                  const members = await allMembersRes.json();
-                  setTeamMembers(members);
-                }
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Error fetching team data:', err);
-        }
+      const normalisedTeam: Team = {
+        id: team._id,
+        name: team.teamName || team.name,
+        shortlist_status: team.shortlist_status || 'pending',
+        dataset_name: team.dataset_name ?? null,
+        dataset_description: team.dataset_description ?? null,
+      };
+
+      setUserTeam(normalisedTeam);
+
+      // Members are embedded in team doc
+      if (Array.isArray(team.members)) {
+        setTeamMembers(
+          team.members.map((m: any, idx: number) => ({
+            id: `${idx}`,
+            user_id: '',
+            profiles: {
+              email: m.email,
+              team_name: m.name,
+            },
+          }))
+        );
       }
+    }
+  } catch (err) {
+    console.error('Error fetching team:', err);
+  }
+}
+
     } catch (error) {
       console.error('Error fetching data:', error);
       setError(error instanceof Error ? error.message : 'Failed to load dashboard');

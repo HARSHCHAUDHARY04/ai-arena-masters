@@ -7,11 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { ParticleBackground } from '@/components/ParticleBackground';
-import { ArrowLeft, Zap, Lock, Mail, Shield, Users, Settings } from 'lucide-react';
+import { ArrowLeft, Zap, Lock, Users, Shield, Settings } from 'lucide-react';
 import { z } from 'zod';
 
+/* =======================
+   Validation Schema
+======================= */
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
+  username: z.string().min(3, 'Username must be at least 3 characters'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
@@ -19,14 +22,17 @@ type LoginType = 'select' | 'admin' | 'participant';
 
 export default function AuthPage() {
   const [loginType, setLoginType] = useState<LoginType>('select');
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
-  
+  const [errors, setErrors] = useState<{ username?: string; password?: string }>({});
+
   const { signIn, user, role } = useAuth();
   const navigate = useNavigate();
 
+  /* =======================
+     Redirect after login
+  ======================= */
   useEffect(() => {
     if (user && role) {
       if (role === 'admin') navigate('/admin');
@@ -35,16 +41,19 @@ export default function AuthPage() {
     }
   }, [user, role, navigate]);
 
+  /* =======================
+     Form Validation
+  ======================= */
   const validateForm = () => {
     try {
-      loginSchema.parse({ email, password });
+      loginSchema.parse({ username, password });
       setErrors({});
       return true;
     } catch (error) {
       if (error instanceof z.ZodError) {
-        const fieldErrors: { email?: string; password?: string } = {};
+        const fieldErrors: { username?: string; password?: string } = {};
         error.errors.forEach((err) => {
-          if (err.path[0] === 'email') fieldErrors.email = err.message;
+          if (err.path[0] === 'username') fieldErrors.username = err.message;
           if (err.path[0] === 'password') fieldErrors.password = err.message;
         });
         setErrors(fieldErrors);
@@ -53,38 +62,37 @@ export default function AuthPage() {
     }
   };
 
+  /* =======================
+     Submit Handler
+  ======================= */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-    
+
     setLoading(true);
-    const { error, role: loggedInRole } = await signIn(email, password);
-    
+    const { error, role: loggedInRole } = await signIn(username, password, loginType as 'admin' | 'participant');
+
     if (error) {
       toast.error('Login failed. Please check your credentials.');
     } else {
       toast.success('Welcome back!');
 
-      // Prefer the role returned from signIn, then context/localStorage as fallback
       const effectiveRole =
         loggedInRole ||
         role ||
-        ((localStorage.getItem('ai_arena_role') || 'participant') as any);
+        (localStorage.getItem('ai_arena_role') as any) ||
+        'participant';
 
-      if (effectiveRole === 'admin') {
-        navigate('/admin');
-      } else if (effectiveRole === 'organizer') {
-        navigate('/organizer');
-      } else {
-        navigate('/dashboard');
-      }
+      if (effectiveRole === 'admin') navigate('/admin');
+      else if (effectiveRole === 'organizer') navigate('/organizer');
+      else navigate('/dashboard');
     }
     setLoading(false);
   };
 
   const handleBack = () => {
     setLoginType('select');
-    setEmail('');
+    setUsername('');
     setPassword('');
     setErrors({});
   };
@@ -92,21 +100,25 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       <ParticleBackground />
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl" />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl" />
-      
+
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }} 
-          animate={{ opacity: 1, y: 0 }} 
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-md"
         >
-          <Link to="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 transition-colors">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-8 transition-colors"
+          >
             <ArrowLeft className="w-4 h-4" /> Back to Home
           </Link>
 
           <div className="glass-card p-8 rounded-2xl border border-border/50">
             <AnimatePresence mode="wait">
+              {/* =======================
+                 SELECT LOGIN TYPE
+              ======================= */}
               {loginType === 'select' ? (
                 <motion.div
                   key="select"
@@ -119,163 +131,104 @@ export default function AuthPage() {
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/20 mb-4">
                       <Shield className="w-8 h-8 text-primary" />
                     </div>
-                    <h1 className="text-2xl font-display font-bold neon-text mb-2">AI Battle Arena</h1>
-                    <p className="text-muted-foreground text-sm">Select your login type to continue</p>
+                    <h1 className="text-2xl font-bold mb-2">AI Battle Arena</h1>
+                    <p className="text-muted-foreground text-sm">
+                      Select your login type
+                    </p>
                   </div>
 
                   <div className="space-y-4">
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                    <button
                       onClick={() => setLoginType('admin')}
-                      className="w-full p-6 rounded-xl bg-gradient-to-br from-secondary/20 to-secondary/5 border border-secondary/30 hover:border-secondary/50 transition-all group"
+                      className="w-full p-6 rounded-xl border hover:border-secondary transition"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-xl bg-secondary/20 flex items-center justify-center group-hover:bg-secondary/30 transition-colors">
-                          <Settings className="w-7 h-7 text-secondary" />
-                        </div>
+                        <Settings className="w-6 h-6 text-secondary" />
                         <div className="text-left">
-                          <h3 className="font-display font-semibold text-lg mb-1">Admin Login</h3>
-                          <p className="text-sm text-muted-foreground">Manage events, teams, and competition settings</p>
+                          <h3 className="font-semibold">Admin Login</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Manage events & teams
+                          </p>
                         </div>
                       </div>
-                    </motion.button>
+                    </button>
 
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
+                    <button
                       onClick={() => setLoginType('participant')}
-                      className="w-full p-6 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 hover:border-primary/50 transition-all group"
+                      className="w-full p-6 rounded-xl border hover:border-primary transition"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors">
-                          <Users className="w-7 h-7 text-primary" />
-                        </div>
+                        <Users className="w-6 h-6 text-primary" />
                         <div className="text-left">
-                          <h3 className="font-display font-semibold text-lg mb-1">Participant Login</h3>
-                          <p className="text-sm text-muted-foreground">Access your team dashboard and competition</p>
+                          <h3 className="font-semibold">Participant Login</h3>
+                          <p className="text-sm text-muted-foreground">
+                            Team dashboard access
+                          </p>
                         </div>
                       </div>
-                    </motion.button>
-                  </div>
-
-                  <div className="pt-4 text-center">
-                    <p className="text-xs text-muted-foreground">
-                      Credentials are assigned by the administrator only
-                    </p>
+                    </button>
                   </div>
                 </motion.div>
               ) : (
+                /* =======================
+                   LOGIN FORM
+                ======================= */
                 <motion.div
                   key="login"
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                 >
-                  <button 
+                  <button
                     onClick={handleBack}
-                    className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-6 transition-colors text-sm"
+                    className="flex items-center gap-2 text-sm text-muted-foreground mb-6"
                   >
-                    <ArrowLeft className="w-4 h-4" /> Back to selection
+                    <ArrowLeft className="w-4 h-4" /> Back
                   </button>
-
-                  <div className="text-center mb-8">
-                    <div className={`inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 ${
-                      loginType === 'admin' ? 'bg-secondary/20' : 'bg-primary/20'
-                    }`}>
-                      {loginType === 'admin' ? (
-                        <Settings className={`w-8 h-8 text-secondary`} />
-                      ) : (
-                        <Users className={`w-8 h-8 text-primary`} />
-                      )}
-                    </div>
-                    <h1 className="text-2xl font-display font-bold neon-text mb-2">
-                      {loginType === 'admin' ? 'Admin Login' : 'Participant Login'}
-                    </h1>
-                    <p className="text-muted-foreground text-sm">
-                      Enter your credentials provided by the administrator
-                    </p>
-                  </div>
-
-                  <div className={`rounded-lg p-4 mb-6 ${
-                    loginType === 'admin' 
-                      ? 'bg-secondary/10 border border-secondary/30' 
-                      : 'bg-primary/10 border border-primary/30'
-                  }`}>
-                    <div className="flex items-start gap-3">
-                      <Lock className={`w-5 h-5 mt-0.5 ${loginType === 'admin' ? 'text-secondary' : 'text-primary'}`} />
-                      <div>
-                        <p className={`text-sm font-medium ${loginType === 'admin' ? 'text-secondary' : 'text-primary'}`}>
-                          Admin-Only Access
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          No self-registration. Credentials assigned by admin.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
 
                   <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="space-y-2">
-                      <Label htmlFor="email">User ID / Email</Label>
+                      <Label htmlFor="username">Username</Label>
                       <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input 
-                          id="email" 
-                          type="email" 
-                          placeholder="your.email@example.com" 
-                          value={email} 
-                          onChange={(e) => setEmail(e.target.value)} 
-                          className="pl-10" 
-                          required 
+                        <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="username"
+                          type="text"
+                          placeholder="team_test_titans"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          className="pl-10"
+                          required
                         />
                       </div>
-                      {errors.email && <p className="text-destructive text-sm">{errors.email}</p>}
+                      {errors.username && (
+                        <p className="text-destructive text-sm">{errors.username}</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="password">Password</Label>
                       <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <Input 
-                          id="password" 
-                          type="password" 
-                          placeholder="••••••••" 
-                          value={password} 
-                          onChange={(e) => setPassword(e.target.value)} 
-                          className="pl-10" 
-                          required 
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="password"
+                          type="password"
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          className="pl-10"
+                          required
                         />
                       </div>
-                      {errors.password && <p className="text-destructive text-sm">{errors.password}</p>}
+                      {errors.password && (
+                        <p className="text-destructive text-sm">{errors.password}</p>
+                      )}
                     </div>
 
-                    <Button 
-                      type="submit" 
-                      variant="hero" 
-                      size="xl" 
-                      className="w-full" 
-                      disabled={loading}
-                    >
-                      {loading ? (
-                        <span className="flex items-center gap-2">
-                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Authenticating...
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2">
-                          <Zap className="w-4 h-4" />
-                          Access Arena
-                        </span>
-                      )}
+                    <Button type="submit" className="w-full" disabled={loading}>
+                      {loading ? 'Authenticating...' : 'Access Arena'}
                     </Button>
                   </form>
-
-                  <div className="mt-6 pt-6 border-t border-border/30 text-center">
-                    <p className="text-sm text-muted-foreground">
-                      Need access? <span className="text-primary">Contact your administrator</span>
-                    </p>
-                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
